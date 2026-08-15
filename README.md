@@ -26,7 +26,7 @@ and automate GitHub workflows.
 -   **Git branch, commit, and Pull Request automation**
 -   **Persistent analysis and execution history**
 -   **FastAPI backend and Next.js developer dashboard**
--   **PostgreSQL persistence**
+-   **MySQL persistence**
 -   **Docker-based development and deployment**
 
 ------------------------------------------------------------------------
@@ -138,7 +138,7 @@ build on previous investigation results.
                                   ▼
                          Branch / Commit / PR
 
-                           PostgreSQL
+                           MySQL
                                 │
                                 ▼
                      Persistent Application Data
@@ -413,7 +413,7 @@ agents.
 
 # 🗄️ Database
 
-CodeRepair uses **PostgreSQL** for persistent application data.
+CodeRepair uses **MySQL** for persistent application data.
 
 The database can store:
 
@@ -444,7 +444,7 @@ User
                    └── Pull Request
 ```
 
-PostgreSQL allows users to revisit previous investigations and provides
+MySQL allows users to revisit previous investigations and provides
 persistent application history.
 
 ------------------------------------------------------------------------
@@ -747,7 +747,7 @@ SECRET_KEY=your_secret_key
 
 GEMINI_API_KEY=your_gemini_api_key
 
-DATABASE_URL=postgresql://postgres:password@localhost:5432/coderepair
+DATABASE_URL=mysql+pymysql://root:password@localhost:3306/coderepair
 
 GITHUB_TOKEN=your_github_token
 ```
@@ -768,7 +768,7 @@ Never commit secrets to Git.
 
 -   Node.js 18+
 -   Python 3.11+
--   PostgreSQL
+-   MySQL
 -   Git
 -   Docker (recommended)
 -   GitHub account
@@ -866,7 +866,7 @@ This can start:
 ``` text
 Next.js
 FastAPI
-PostgreSQL
+MySQL
 ```
 
 ------------------------------------------------------------------------
@@ -1082,7 +1082,7 @@ CodeRepair demonstrates practical implementation of:
 -   GitHub API Integration
 -   FastAPI
 -   Next.js
--   PostgreSQL
+-   MySQL
 -   SQLAlchemy
 -   Docker
 -   Git
@@ -1116,15 +1116,4 @@ This project is licensed under the MIT License.
 
 # 👨‍💻 Author
 
-**Your Name**
-
-B.Tech --- Mechatronics & Automation Engineering
-
-Interests:
-
--   Agentic AI
--   Generative AI
--   AI Application Development
--   Software Engineering
--   Developer Tools
--   Full-Stack Development
+**Abhay Keshari**
