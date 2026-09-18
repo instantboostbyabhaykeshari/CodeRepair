@@ -1,1119 +1,323 @@
-# CodeRepair
+# CodeRepair — Agentic AI GitHub Issue Solver
 
-> An Agentic AI Software Engineering Platform that investigates
-> repository issues, identifies probable root causes, generates code
-> fixes, validates them with tests, and prepares GitHub Pull Requests.
+A local learning application that reads a GitHub issue, clones its repository,
+uses Gemini to select relevant source files, proposes and applies a fix in that
+clone, validates it, and shows a review. Only explicit approval starts the
+separate branch, commit, push and draft pull-request flow.
 
-CodeRepair is designed to move beyond a traditional AI coding chatbot.
-Instead of answering only from a user's description, it can inspect a
-real repository, search source code, read relevant files, reason over
-the evidence, generate a targeted fix, run tests, debug failed attempts,
-and automate GitHub workflows.
+The application uses Next.js JavaScript, Tailwind CSS, FastAPI, LangGraph,
+LangChain's Gemini integration and optional LangSmith tracing. There is no
+production demo mode, database, authentication service or automatic merge.
 
-------------------------------------------------------------------------
+## Architecture and agent workflow
 
-## 🚀 Key Features
+```text
+Next.js form → FastAPI → LangGraph
+  START
+    → fetch_issue → clone_repository → inspect_repository
+    → select_relevant_files → read_files → check_context
+                                  ↑            |
+                                  └────────────┘ needs more context (at most twice)
+                                               |
+                                          enough context
+                                               ↓
+       plan_solution → generate_patch → apply_patch → validate_changes
+                                               ↓
+                                         prepare_result → END
 
--   **Agentic AI debugging** using LangGraph and Gemini
--   **Multi-agent orchestration** for repository analysis, bug
-    detection, fixing, testing, debugging, and GitHub automation
--   **Repository-aware investigation** through code search and file
-    inspection
--   **Tool-based reasoning** instead of relying only on LLM knowledge
--   **AI-generated code fixes** with affected-file context
--   **Automated test execution and validation**
--   **Feedback-driven Debug → Fix → Test loop**
--   **Git branch, commit, and Pull Request automation**
--   **Persistent analysis and execution history**
--   **FastAPI backend and Next.js developer dashboard**
--   **MySQL persistence**
--   **Docker-based development and deployment**
+FastAPI saves the completed result → browser displays review
+  Cancel → remove local clone
+  Approve → check access/base commit → create branch → commit approved files
+          → recheck base commit → push branch → create draft PR → remove clone
 
-------------------------------------------------------------------------
-
-## 🧠 Problem
-
-Developers often spend significant time investigating software issues
-before they can even start fixing them.
-
-A typical debugging workflow involves:
-
-1.  Understanding the issue
-2.  Finding relevant files
-3.  Searching the codebase
-4.  Reading related implementation
-5.  Identifying the root cause
-6.  Designing a fix
-7.  Modifying code
-8.  Running tests
-9.  Debugging failed tests
-10. Creating a commit and Pull Request
-
-Traditional AI assistants often stop after suggesting an answer.
-
-CodeRepair aims to automate the complete investigation and validation
-workflow.
-
-------------------------------------------------------------------------
-
-## 💡 Solution
-
-CodeRepair uses specialized AI agents coordinated through **LangGraph**.
-
-``` text
-User Issue
-    ↓
-Manager Agent
-    ↓
-Repository Analysis
-    ↓
-Code Search
-    ↓
-Code Understanding
-    ↓
-Bug Detection
-    ↓
-Fix Generation
-    ↓
-Test Agent
-    ↓
- ┌───────────────┐
- │               │
-PASS            FAIL
- │               │
- ▼               ▼
-GitHub Agent   Debug Agent
- │               │
- ▼               ▼
-Pull Request  Fix Generation
-                 │
-                 ▼
-              Test Again
+Server-Sent Events carry progress and public state to the browser throughout.
 ```
 
-The system maintains shared state throughout the workflow so agents can
-build on previous investigation results.
-
-------------------------------------------------------------------------
-
-# 🏗️ Architecture
-
-``` text
-┌─────────────────────────────────────────────┐
-│              Next.js Frontend               │
-│                                             │
-│  Issue Input • Repository • Analysis        │
-│  Agent Steps • Code Fix • History           │
-└──────────────────────┬──────────────────────┘
-                       │ REST API
-                       ▼
-┌─────────────────────────────────────────────┐
-│              FastAPI Backend                │
-│                                             │
-│  API Routes • Services • Authentication     │
-└──────────────────────┬──────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────┐
-│             LangGraph Workflow              │
-│                                             │
-│ Manager → Code → Bug → Fix → Test → Debug  │
-│                         │                   │
-│                         ▼                   │
-│                    GitHub Agent             │
-└───────────────┬─────────────────┬───────────┘
-                │                 │
-                ▼                 ▼
-           Gemini LLM          Tool Layer
-                                  │
-                 ┌────────────────┼──────────────┐
-                 ▼                ▼              ▼
-             Code Search      File Reader     Test Runner
-                 │                │              │
-                 └────────────────┼──────────────┘
-                                  │
-                                  ▼
-                            GitHub API
-                                  │
-                                  ▼
-                         Branch / Commit / PR
-
-                           MySQL
-                                │
-                                ▼
-                     Persistent Application Data
-```
-
-------------------------------------------------------------------------
-
-# 🤖 AI Agents
-
-## 1. Manager Agent
-
-The Manager controls the investigation workflow.
-
-Responsibilities:
-
--   Understand the reported issue
--   Decide the next action
--   Select appropriate tools
--   Track investigation context
--   Coordinate specialized agents
--   Avoid unnecessary repeated searches
--   Decide when enough evidence has been collected
-
-Example:
-
-``` json
-{
-  "action": "search_code",
-  "query": "authorization",
-  "reason": "The issue is related to JWT authentication, so the authorization handling should be investigated."
-}
-```
-
-------------------------------------------------------------------------
-
-## 2. Repository Analyzer
-
-Analyzes repository structure and identifies:
-
--   Programming languages
--   Frameworks
--   Backend/frontend directories
--   Configuration files
--   Entry points
--   Test directories
--   Important application modules
-
-------------------------------------------------------------------------
-
-## 3. Code Agent
-
-Investigates source code using repository tools.
-
-Capabilities:
-
-``` text
-list_files()
-search_code()
-read_file()
-```
-
-The agent uses actual repository evidence instead of relying only on the
-LLM's internal knowledge.
-
-------------------------------------------------------------------------
-
-## 4. Bug Detection Agent
-
-Analyzes gathered code and identifies the most likely root cause.
-
-It can reason about:
-
--   Authentication issues
--   API behavior
--   Incorrect conditions
--   Database interactions
--   State management
--   Configuration
--   Error handling
--   Dependency usage
--   Function and data flow
-
-------------------------------------------------------------------------
-
-## 5. Fix Generation Agent
-
-Generates a targeted code modification based on the identified root
-cause.
-
-The result can include:
-
--   Affected file
--   Existing implementation
--   Proposed change
--   Explanation
--   Expected behavior after the fix
-
-------------------------------------------------------------------------
-
-## 6. Test Agent
-
-Validates generated changes by:
-
--   Detecting available test frameworks
--   Selecting relevant tests
--   Running tests
--   Capturing output
--   Reporting failures
-
-Example:
-
-``` text
-Test Results
-
-✓ Authentication test
-✓ Login API test
-✓ Protected route test
-
-3 passed
-0 failed
-```
-
-------------------------------------------------------------------------
-
-## 7. Debug Agent
-
-If tests fail, the Debug Agent receives the failure information and
-determines what should change.
-
-``` text
-Test Failure
-     ↓
-Debug Agent
-     ↓
-Analyze Error
-     ↓
-Fix Generator
-     ↓
-Run Tests Again
-```
-
-The loop is bounded by a configurable maximum number of attempts to
-avoid infinite execution.
-
-------------------------------------------------------------------------
-
-## 8. GitHub Agent
-
-Handles repository automation:
-
-``` text
-create_branch()
-create_commit()
-create_pull_request()
-```
-
-Typical workflow:
-
-``` text
-Create Branch
-     ↓
-Apply Fix
-     ↓
-Run Tests
-     ↓
-Create Commit
-     ↓
-Push Changes
-     ↓
-Create Pull Request
-```
-
-------------------------------------------------------------------------
-
-# 🔗 Why LangGraph?
-
-A software debugging task requires multiple dependent decisions.
-
-``` text
-What should I search?
-        ↓
-Which file is relevant?
-        ↓
-Should I inspect the file?
-        ↓
-What is the root cause?
-        ↓
-What should be changed?
-        ↓
-Did the fix work?
-        ↓
-If not, what should change?
-```
-
-LangGraph provides:
-
--   Stateful workflows
--   Conditional routing
--   Agent coordination
--   Feedback loops
--   Checkpointing
--   Retry handling
--   Human-in-the-loop support
--   Extensible graph-based orchestration
-
-This makes CodeRepair more suitable for multi-step software engineering
-tasks than a single LLM prompt.
-
-------------------------------------------------------------------------
-
-# 🛠️ Tools
-
-CodeRepair exposes controlled tools to its agents.
-
-### Repository Tools
-
-``` text
-list_files()
-search_code()
-read_file()
-```
-
-### Development Tools
-
-``` text
-write_file()
-run_tests()
-run_terminal()
-```
-
-### GitHub Tools
-
-``` text
-create_branch()
-create_commit()
-create_pull_request()
-```
-
-Agents can only use explicitly registered tools.
-
-------------------------------------------------------------------------
-
-# 🧩 Agent State
-
-LangGraph maintains shared state throughout the workflow.
-
-Example:
-
-``` python
-{
-    "issue": "...",
-    "repository_id": "...",
-    "repository_path": "...",
-    "current_agent": "...",
-    "investigation_history": [],
-    "relevant_files": [],
-    "code_context": [],
-    "root_cause": None,
-    "proposed_fix": None,
-    "test_results": None,
-    "debug_attempts": 0,
-    "branch_name": None,
-    "commit_sha": None,
-    "pull_request_url": None
-}
-```
-
-This allows each agent to build on the work performed by previous
-agents.
-
-------------------------------------------------------------------------
-
-# 🗄️ Database
-
-CodeRepair uses **MySQL** for persistent application data.
-
-The database can store:
-
-``` text
-Users
-Repositories
-Issues
-Agent Runs
-Agent Steps
-Analysis Results
-Test Results
-Pull Requests
-```
-
-Relationship:
-
-``` text
-User
- │
- └── Repositories
-       │
-       └── Issues
-             │
-             └── Agent Runs
-                   ├── Agent Steps
-                   ├── Analysis
-                   ├── Test Results
-                   └── Pull Request
-```
-
-MySQL allows users to revisit previous investigations and provides
-persistent application history.
-
-------------------------------------------------------------------------
-
-# 💻 Frontend
-
-The frontend is built with:
-
--   Next.js
--   React
--   JavaScript
--   Tailwind CSS
--   Lucide React
-
-Main UI areas:
-
-``` text
-Sidebar
-Header
-Repository Connection
-Issue Input
-Agent Investigation
-AI Analysis
-Code Fix
-Test Results
-Pull Request
-Analysis History
-```
-
-Primary user journey:
-
-``` text
-Connect Repository
-       ↓
-Describe Issue
-       ↓
-Analyze
-       ↓
-Watch Agent Investigation
-       ↓
-Review Root Cause
-       ↓
-Review Code Fix
-       ↓
-Run Tests
-       ↓
-Create Pull Request
-```
-
-------------------------------------------------------------------------
-
-# ⚙️ Backend
-
-The backend is built with:
-
--   Python
--   FastAPI
--   Pydantic
--   SQLAlchemy
--   LangGraph
--   LangChain
--   Gemini
-
-Example backend structure:
-
-``` text
-backend/
-├── app/
-│   ├── agents/
-│   │   ├── manager.py
-│   │   ├── repository_agent.py
-│   │   ├── code_agent.py
-│   │   ├── bug_agent.py
-│   │   ├── fix_agent.py
-│   │   ├── test_agent.py
-│   │   ├── debug_agent.py
-│   │   └── github_agent.py
-│   │
-│   ├── graph/
+Gemini chooses files through actual LangChain tool calls, assesses context,
+writes a plan and proposes replacement contents. Python checks paths, bounds
+the loop, writes files and runs commands. These responsibilities are separate.
+The analysis graph ends before approval; it does not need a checkpointer.
+See [LEARNING.md](LEARNING.md) for a guided explanation.
+
+## Actual source structure
+
+Generated environments, dependencies, caches and temporary clones are omitted.
+
+```text
+CodeRepair/
+├── .gitignore
+├── README.md
+├── LEARNING.md
+├── server/
+│   ├── .env.example
+│   ├── requirements.txt
+│   ├── config.py
+│   ├── main.py
+│   ├── github_service.py
+│   ├── workspace_service.py
+│   ├── agent/
+│   │   ├── __init__.py
 │   │   ├── state.py
+│   │   ├── graph.py
 │   │   ├── nodes.py
-│   │   ├── edges.py
-│   │   └── workflow.py
-│   │
-│   ├── tools/
-│   │   ├── search_code.py
-│   │   ├── read_file.py
-│   │   ├── write_file.py
-│   │   ├── run_tests.py
-│   │   ├── terminal.py
-│   │   └── github.py
-│   │
-│   ├── api/
-│   ├── models/
-│   ├── services/
-│   ├── database/
-│   └── core/
-│
-├── tests/
-├── requirements.txt
-├── Dockerfile
-└── alembic.ini
+│   │   ├── tools.py
+│   │   ├── llm.py
+│   │   └── validation.py
+│   └── tests/
+│       └── test_solver.py
+└── client/
+    ├── .env.example
+    ├── .gitignore
+    ├── AGENTS.md
+    ├── CLAUDE.md
+    ├── package.json
+    ├── package-lock.json
+    ├── jsconfig.json
+    ├── next.config.mjs
+    ├── eslint.config.mjs
+    ├── postcss.config.mjs
+    ├── app/
+    │   ├── page.js
+    │   ├── layout.js
+    │   └── globals.css
+    ├── components/
+    │   ├── IssueForm.js
+    │   ├── AgentDetails.js
+    │   ├── AgentTimeline.js
+    │   └── DiffViewer.js
+    └── lib/
+        └── api.js
 ```
 
-------------------------------------------------------------------------
+All application frontend code is JavaScript. TypeScript is present only as a
+development dependency required by the Next.js ESLint parser.
 
-# 📁 Frontend Structure
+## Windows, VS Code and PowerShell setup
 
-``` text
-frontend/
-├── app/
-├── components/
-│   ├── Sidebar.jsx
-│   ├── Header.jsx
-│   ├── IssueInput.jsx
-│   ├── RepositoryInput.jsx
-│   ├── RepositoryCard.jsx
-│   ├── AnalysisCard.jsx
-│   ├── CodeBlock.jsx
-│   ├── AgentSteps.jsx
-│   ├── TestResults.jsx
-│   ├── PullRequestCard.jsx
-│   ├── HistoryPanel.jsx
-│   └── LoadingAnalysis.jsx
-│
-├── lib/
-├── public/
-├── package.json
-└── Dockerfile
+Install Git, Python 3.11 or newer, and Node.js 20.9 or newer. Check:
+```powershell
+git --version
+py --version
+node --version
+npm.cmd --version
 ```
 
-------------------------------------------------------------------------
-
-# 🔌 API Endpoints
-
-## Repository
-
-### Inspect Repository
-
-``` http
-POST /api/repository/inspect
+**Your completed code is already in this local folder.** Open it in VS Code:
+```powershell
+cd "C:\Abhay\PDFfiles\Desktop\Agentic AI\CodeRepair"
+code .
 ```
 
-Inspects a repository and creates a repository session.
+For a fresh machine, after these local changes have been published to your
+repository, the clone commands are:
+```powershell
+git clone https://github.com/instantboostbyabhaykeshari/CodeRepair.git
+cd CodeRepair
+code .
+```
+The implementation in this workspace has not been committed or pushed for you;
+cloning the remote before publishing it may retrieve an older version.
 
-### Search Code
+### Backend terminal
 
-``` http
-POST /api/repository/search
+In VS Code, open Terminal → New Terminal:
+```powershell
+cd "C:\Abhay\PDFfiles\Desktop\Agentic AI\CodeRepair\server"
+py -m venv .venv
+& ./.venv/Scripts/python.exe -m pip install -r requirements.txt
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+code .env
 ```
 
-Example:
+You can skip environment creation and installation when already set up.
+Calling the environment's Python directly avoids PowerShell activation-policy
+problems. Put your real values into server/.env, never into frontend files:
 
-``` json
-{
-  "repository_id": "repo_123",
-  "query": "authorization"
-}
-```
-
-### Read File
-
-``` http
-POST /api/repository/read
-```
-
-Example:
-
-``` json
-{
-  "repository_id": "repo_123",
-  "file_path": "server/middleware/auth.js"
-}
-```
-
-------------------------------------------------------------------------
-
-## Agent
-
-### Run CodeRepair
-
-``` http
-POST /api/agent/run
-```
-
-Example:
-
-``` json
-{
-  "issue": "Login API returns 401 even with a valid JWT",
-  "repository_id": "repo_123"
-}
-```
-
-------------------------------------------------------------------------
-
-## Analysis
-
-``` http
-GET /api/analysis/{analysis_id}
-```
-
-Returns the result of an agent investigation.
-
-### History
-
-``` http
-GET /api/analysis/history
-```
-
-Returns previous investigations.
-
-------------------------------------------------------------------------
-
-# 🔍 Example Investigation
-
-### User Issue
-
-``` text
-Login API returns 401 even with a valid JWT.
-```
-
-### Investigation
-
-``` text
-Step 1
-Manager → search_code("authorization")
-
-Step 2
-Code Agent → finds authentication middleware
-
-Step 3
-Code Agent → read_file("middleware/auth.js")
-
-Step 4
-Bug Agent → identifies JWT parsing problem
-
-Step 5
-Fix Agent → generates authentication fix
-
-Step 6
-Test Agent → runs authentication tests
-
-Step 7
-Tests pass
-
-Step 8
-GitHub Agent → creates branch, commit and Pull Request
-```
-
-### Example Result
-
-``` text
-Issue:
-Login API returns 401 with a valid JWT.
-
-Root Cause:
-The Authorization header is passed directly to JWT
-verification instead of extracting the Bearer token.
-
-Suggested Fix:
-Extract the token before JWT verification.
-
-Tests:
-18 passed
-0 failed
-
-Branch:
-fix/jwt-authentication-401
-
-Pull Request:
-Created successfully
-```
-
-------------------------------------------------------------------------
-
-# 🔐 Security
-
-CodeRepair follows several security principles:
-
--   Sensitive credentials are stored in environment variables
--   GitHub tokens are never hardcoded
--   Repository operations are isolated to the active workspace
--   Agents can only access registered tools
--   Terminal execution is controlled
--   File access is restricted to the selected repository
--   Generated code should be reviewed before merging
-
-> AI-generated code should never be blindly deployed to production.
-
-------------------------------------------------------------------------
-
-# ⚙️ Environment Variables
-
-Create a `.env` file in the backend:
-
-``` env
-APP_ENV=development
-SECRET_KEY=your_secret_key
-
-GEMINI_API_KEY=your_gemini_api_key
-
-DATABASE_URL=mysql+pymysql://root:password@localhost:3306/coderepair
-
+```env
+GOOGLE_API_KEY=your_google_ai_studio_key
+GEMINI_MODEL=gemini-2.5-flash
 GITHUB_TOKEN=your_github_token
+LANGSMITH_TRACING=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=github-issue-agent
+FRONTEND_URL=http://localhost:3000
+GIT_AUTHOR_NAME=Your Name
+GIT_AUTHOR_EMAIL=your_github_noreply_email
 ```
 
-Frontend `.env.local`:
+Then start the backend:
+```powershell
+& ./.venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-``` env
+Keep that terminal running. Backend: [localhost:8000/api/health](http://localhost:8000/api/health).
+Interactive API documentation: [localhost:8000/docs](http://localhost:8000/docs).
+The root / path is not an application page. Use one backend worker.
+
+### Frontend terminal
+
+Open a second terminal:
+```powershell
+cd "C:\Abhay\PDFfiles\Desktop\Agentic AI\CodeRepair\client"
+npm.cmd install
+if (-not (Test-Path .env.local)) { Copy-Item .env.example .env.local }
+```
+
+client/.env.local must contain:
+```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-Never commit secrets to Git.
-
-------------------------------------------------------------------------
-
-# 🚀 Installation
-
-## Prerequisites
-
--   Node.js 18+
--   Python 3.11+
--   MySQL
--   Git
--   Docker (recommended)
--   GitHub account
--   Gemini API key
-
-------------------------------------------------------------------------
-
-## Clone
-
-``` bash
-git clone https://github.com/your-username/CodeRepair.git
-cd CodeRepair
+Start:
+```powershell
+npm.cmd run dev -- --hostname 127.0.0.1
 ```
 
-------------------------------------------------------------------------
+Open [localhost:3000](http://localhost:3000), using localhost consistently so the
+browser origin matches FRONTEND_URL. Keep both terminals running. Ctrl+C stops
+a server. Restart after changing environment variables.
 
-## Backend
+## Obtain your keys
 
-``` bash
-cd backend
+### Gemini
 
-python -m venv venv
+1. Sign in to [Google AI Studio's API keys page](https://aistudio.google.com/apikey).
+2. Create a key for a Google project and copy it to GOOGLE_API_KEY.
+3. Keep GEMINI_MODEL configurable. The default gemini-2.5-flash has a free-tier
+   offering, subject to eligibility, regional availability and quota.
+4. Check [Gemini pricing and free-tier limits](https://ai.google.dev/gemini-api/docs/pricing)
+   before changing models. Rate limits or unavailable models are reported as
+   errors, never replaced by fabricated output.
+
+### GitHub
+
+1. In GitHub, open Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token.
+2. Choose the resource owner, an expiry and only the repository you will use.
+3. Grant repository permissions: **Contents: Read and write**, **Issues: Read**,
+   and **Pull requests: Read and write**. Metadata read access is included.
+4. Put the token in GITHUB_TOKEN and restart FastAPI.
+
+Your GitHub account must itself have write access. Organization approval may
+be required. This implementation opens branches in the same repository; it
+does not create forks. See the official
+[token instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+
+### LangSmith (optional)
+
+1. Sign in to [LangSmith](https://smith.langchain.com).
+2. Open Settings → API Keys and create an API key.
+3. Set LANGSMITH_API_KEY, LANGSMITH_TRACING=true and
+   LANGSMITH_PROJECT=github-issue-agent in server/.env.
+4. Restart the backend, run an issue, then open that LangSmith project to
+   inspect graph nodes, model calls and traced service operations.
+
+Tracing sends issue and selected source data to LangSmith. Leave it disabled
+when you do not want that sharing. See the official
+[account and API-key guide](https://docs.langchain.com/langsmith/create-account-api-key).
+
+## How to use
+
+1. Enter a GitHub repository URL and an existing issue number or matching issue URL.
+2. Optionally enable installation and execution of repository checks only for
+   code you trust. Static checks are the default.
+3. Click **Solve issue** and watch the execution timeline and activity.
+4. Review the issue, repository summary, selected files and additional context.
+5. Review the solution plan, per-file diffs and validation output/exit codes.
+6. Failed validation blocks publishing. If checks were skipped, explicitly
+   acknowledge that fact before approval.
+7. Click **Approve & create PR**, or cancel to remove the clone.
+8. Open the resulting draft PR; the page shows its title, number and URL.
+9. If tracing is enabled, inspect the run in LangSmith.
+
+The frontend stores the run ID so refresh reconnects while the backend remains
+running. It uses normal React state and EventSource; no state-management library.
+
+## Validation and automated tests
+
+The agent applies changes to the actual clone before checking them.
+Python, JSON and TOML files receive parser checks. Plain JavaScript uses
+node --check when available; JSX and other languages require project tooling.
+Unsupported checks are marked skipped.
+
+With the trusted-code option enabled, JavaScript projects install dependencies
+with npm ci (or npm install without creating a lockfile), disabling installation
+scripts, then execute only existing test, lint and build scripts. Python
+projects with pytest-style tests create a separate environment inside the clone,
+install pytest and requirements.txt or the root package, then run pytest.
+Commands are selected by backend code, not supplied by Gemini.
+
+Each project check has a 60-second timeout; dependency installation has a
+180-second timeout. stdout, stderr and exit codes are recorded. A passed syntax
+check does not prove correct behavior. Skipped checks remain visible.
+
+Run this application's own checks:
+```powershell
+cd "C:\Abhay\PDFfiles\Desktop\Agentic AI\CodeRepair\server"
+& ./.venv/Scripts/python.exe -m pytest tests -q
+
+cd "../client"
+npm.cmd run lint
+npm.cmd run build
 ```
 
-### Windows
-
-``` bash
-venv\Scripts\activate
-```
-
-### macOS / Linux
-
-``` bash
-source venv/bin/activate
-```
-
-Install dependencies:
-
-``` bash
-pip install -r requirements.txt
-```
-
-Run migrations:
-
-``` bash
-alembic upgrade head
-```
-
-Start the API:
-
-``` bash
-uvicorn app.main:app --reload
-```
-
-Backend:
-
-``` text
-http://localhost:8000
-```
-
-Swagger:
-
-``` text
-http://localhost:8000/docs
-```
-
-------------------------------------------------------------------------
-
-## Frontend
-
-``` bash
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend:
-
-``` text
-http://localhost:3000
-```
-
-------------------------------------------------------------------------
-
-# 🐳 Docker
-
-Run the complete application using Docker Compose:
-
-``` bash
-docker compose up --build
-```
-
-This can start:
-
-``` text
-Next.js
-FastAPI
-MySQL
-```
-
-------------------------------------------------------------------------
-
-# 🧪 Testing
-
-Backend:
-
-``` bash
-cd backend
-pytest
-```
-
-Frontend:
-
-``` bash
-cd frontend
-npm run lint
-npm run build
-```
-
-The main integration flow should validate:
-
-``` text
-Repository
-    ↓
-Issue
-    ↓
-Agent
-    ↓
-Tools
-    ↓
-Root Cause
-    ↓
-Fix
-    ↓
-Tests
-    ↓
-GitHub PR
-```
-
-------------------------------------------------------------------------
-
-# 📊 Observability
-
-Each agent run can record:
-
-``` text
-Agent
-Action
-Input
-Tool
-Tool Result
-Execution Status
-Error
-Execution Time
-```
-
-Example:
-
-``` text
-Step 1
-Manager → search_code("authorization")
-
-Step 2
-Code Agent → read_file("middleware/auth.js")
-
-Step 3
-Bug Agent → root cause identified
-
-Step 4
-Fix Agent → fix generated
-
-Step 5
-Test Agent → tests passed
-
-Step 6
-GitHub Agent → Pull Request created
-```
-
-This makes the workflow easier to debug, monitor, and improve.
-
-------------------------------------------------------------------------
-
-# 🧱 Design Principles
-
-### Tool-First Investigation
-
-The agent should inspect actual repository evidence before making
-conclusions.
-
-### Small Changes
-
-Generated fixes should modify only the files necessary for the issue.
-
-### Test Before PR
-
-A Pull Request should only be prepared after validation succeeds.
-
-### Stateful Execution
-
-Agents should use previous investigation results instead of repeatedly
-starting from scratch.
-
-### Bounded Loops
-
-Agent retry and debugging loops must have maximum execution limits.
-
-### Human Review
-
-AI-generated changes remain reviewable through GitHub Pull Requests.
-
-------------------------------------------------------------------------
-
-# 🆚 Traditional AI vs CodeRepair
-
-### Traditional AI Coding Assistant
-
-``` text
-Issue
-  ↓
-LLM
-  ↓
-Suggestion
-```
-
-### CodeRepair
-
-``` text
-Issue
-  ↓
-Reason
-  ↓
-Select Tool
-  ↓
-Inspect Repository
-  ↓
-Analyze Evidence
-  ↓
-Identify Root Cause
-  ↓
-Generate Fix
-  ↓
-Run Tests
-  ↓
-Debug if Needed
-  ↓
-Validate
-  ↓
-Create Pull Request
-```
-
-CodeRepair focuses on **AI that can investigate and act**, rather than
-only generate text.
-
-------------------------------------------------------------------------
-
-# 🔮 Future Improvements
-
--   AST-based code analysis
--   Semantic code search
--   Repository dependency graphs
--   Embedding-based repository indexing
--   More programming languages
--   Human approval checkpoints
--   Automatic rollback
--   GitHub Actions integration
--   Jira integration
--   Slack notifications
--   Security vulnerability scanning
--   Static analysis integration
--   Automatic regression-test generation
--   Code quality scoring
--   Agent evaluation and benchmarking
-
-------------------------------------------------------------------------
-
-# ⚠️ Limitations
-
-CodeRepair is an AI-assisted engineering system and does not guarantee
-that every generated fix is correct.
-
-Potential limitations include:
-
--   LLM-generated fixes may be incorrect
--   Complex repositories may require human intervention
--   Tests may not cover every edge case
--   Large repositories can increase execution time and API usage
--   External LLM/GitHub services may become temporarily unavailable
--   Repository permissions can limit available operations
-
-Always review generated changes before merging them into production
-code.
-
-------------------------------------------------------------------------
-
-# 🧠 What This Project Demonstrates
-
-CodeRepair demonstrates practical implementation of:
-
--   Agentic AI
--   Multi-Agent Systems
--   LangGraph
--   LangChain
--   Gemini
--   LLM Application Development
--   Tool Calling
--   Stateful AI Workflows
--   AI Code Analysis
--   Automated Debugging
--   AI Code Generation
--   Test Automation
--   GitHub API Integration
--   FastAPI
--   Next.js
--   MySQL
--   SQLAlchemy
--   Docker
--   Git
--   REST APIs
--   Software Engineering Automation
-
-------------------------------------------------------------------------
-
-# ⭐ Project Highlights
-
-``` text
-✓ LangGraph-based stateful agent workflow
-✓ Specialized AI agents
-✓ Repository-aware investigation
-✓ Tool-based code analysis
-✓ AI root-cause detection
-✓ Automated code-fix generation
-✓ Test → Debug → Fix feedback loop
-✓ GitHub branch / commit / PR automation
-✓ Persistent investigation history
-✓ Production-oriented architecture
-```
-
-------------------------------------------------------------------------
-
-# 📄 License
-
-This project is licensed under the MIT License.
-
-------------------------------------------------------------------------
-
-# 👨‍💻 Author
-
-**Abhay Keshari**
+The backend suite replaces Gemini and GitHub responses only inside tests.
+It uses real temporary Git repositories to verify cloning, applying changes,
+committing, pushing, cancellation, approval gates, stale bases, path safety,
+validation and SSE replay. A successful test suite does not verify your API
+credentials or guarantee a real model will fix a given issue.
+
+A simple live test: use a small repository you own with a clear reproducible
+bug and a test, create a GitHub issue describing expected behavior, then follow
+the UI steps above. Confirm no remote branch exists before approval and that
+the resulting draft PR targets the correct default branch.
+
+## Security and practical limits
+
+- Local, single-user application: bind to loopback, use one worker. It has no
+  login system and is not intended for public deployment.
+- Path checks reject traversal, absolute paths, symlinks/junctions, hidden/secret
+  paths and ignored generated directories. The file tool is bound to one clone.
+- Backend credentials are not exposed to the browser or included in model
+  state. Git authentication is supplied through process configuration, not URLs.
+- Optional repository checks execute repository and proposed code on your
+  computer. A virtual environment and stripped secret environment variables
+  are **not a security sandbox**; code can still access files and the network.
+- Each run may read at most 12 files, 40 KB per file, 120,000 context characters,
+  with two additional reading rounds. Up to six files can be changed.
+- Source discovery is capped at 5,000 supported text files. Large repositories,
+  monorepos and unusual build systems may need manual setup.
+- New source files and modifications are supported. Deletions, renames, binary
+  changes, submodules and hidden paths such as .github workflows are excluded.
+- Approval commits only the reviewed files. Changed content, unexpected tracked
+  modifications and a changed default-branch base cause an error.
+- Pushes use a new codex/issue-* branch without force. The application never
+  merges a PR or pushes to the default branch. If PR creation fails after a
+  successful push, the remote branch may remain for manual inspection.
+- Runs and events live in memory: restart loses review/history. Up to 20 runs
+  are retained and two analyses can start concurrently. No database is needed
+  for this local lesson.
+- Clones under server/.workspaces are removed after completion, cancellation or
+  failure. Paused reviews keep their clone. After a crash, stop the backend
+  before manually removing abandoned clones from that directory.
+- A fix may be incorrect despite passing checks. Review every proposal.
+
+## Cleanup performed
+
+Removed unused legacy UI components (AnalysisCard, IssueInput, Sidebar, Header,
+EmptyState), duplicate Axios API setup, the abandoned server/app API, the
+runtime demo fixture, default Next.js public assets/favicon and obsolete
+frontend README. Removed unused axios, react-markdown and remark-gfm packages.
+Retained project instruction files and useful tests. Existing personal virtual
+environments were not deleted.
+
+## Troubleshooting
+
+- Missing-key banner: configure both required keys in server/.env and restart.
+- Connection error: run both servers and verify both URL environment variables.
+- GitHub 404: check repository/issue spelling and the token's repository access.
+- GitHub 403: check permissions, organization approval and API rate limits.
+- Gemini error: check model access, key, quota and free-tier eligibility.
+- Base changed during review: cancel and start again against the latest commit.
+- Run not found after restart: start a new run; in-memory history is gone.
+- Validation failure: inspect captured output; no PR can be created from that run.
